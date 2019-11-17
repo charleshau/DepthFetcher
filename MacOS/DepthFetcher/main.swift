@@ -16,9 +16,9 @@ import CoreImage.CIImage
 //let desktopDirectory = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first!
 // FileManager.default.changeCurrentDirectoryPath(desktopDirectory.path) // lets change the current directory to the desktop directory
 // let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-let out = "test00"
+let out = "IMG_0311"
 let fileName = "\(out).jpg"
-let fullFileName = "/Users/Charles/Library/Mobile Documents/com~apple~CloudDocs/Project/DepthFetcher/DepthFetcher/\(fileName)"
+let fullFileName = "/Users/Charles/Library/Mobile Documents/com~apple~CloudDocs/Project/DepthFetcher/MacOS/DepthFetcher/\(fileName)"
 let ext = "jpg"
 let pre = "file://"
 let homeDirURL = FileManager.default.homeDirectoryForCurrentUser
@@ -133,7 +133,39 @@ func fprintf(EPSource:NSImage, out:String)->()
     }
 }
 
-func CVbufferChecker (out:String)->(NSImage)
+struct property_of_iPhoneDual {
+  static let slope: CGFloat = 1.0
+  static let width: CGFloat = 0.3
+}
+
+func CVModifier (for Source: CIImage, focus_on focus: CGFloat, Scale scale: CGFloat) -> CIImage
+{
+    let s1 = property_of_iPhoneDual.slope
+    let s2 = -property_of_iPhoneDual.slope
+    let filterWidth =  2 / property_of_iPhoneDual.slope + property_of_iPhoneDual.width
+    let b1 = -property_of_iPhoneDual.slope * (focus - filterWidth / 2)
+    let b2 = -(-property_of_iPhoneDual.slope) * (focus + filterWidth / 2)
+    let mask0 = Source
+        .applyingFilter("CIColorMatrix", parameters: [
+            "inputRVector": CIVector(x: s1, y: 0, z: 0, w: 0),
+            "inputGVector": CIVector(x: 0, y: s1, z: 0, w: 0),
+            "inputBVector": CIVector(x: 0, y: 0, z: s1, w: 0),
+            "inputBiasVector": CIVector(x: b1, y: b1, z: b1, w: 0)])
+        .applyingFilter("CIColorClamp")
+
+    let mask1 = Source
+        .applyingFilter("CIColorMatrix", parameters: [
+            "inputRVector": CIVector(x: s2, y: 0, z: 0, w: 0),
+            "inputGVector": CIVector(x: 0, y: s2, z: 0, w: 0),
+            "inputBVector": CIVector(x: 0, y: 0, z: s2, w: 0),
+            "inputBiasVector": CIVector(x: b2, y: b2, z: b2, w: 0)])
+        .applyingFilter("CIColorClamp")
+    let combinedMask = mask0.applyingFilter("CIDarkenBlendMode", parameters: ["inputBackgroundImage" : mask1])
+    let mask = combinedMask.applyingFilter("CIBicubicScaleTransform", parameters: ["inputScale": scale])
+    return mask
+}
+
+func CVBufferChecker (out:String)->(NSImage)
 {
     func CVbufferMaker (ext:String, fileName:String, x:Int, y:Int) -> ((Int, Int), Float32, CVPixelBuffer?)
     {
@@ -160,6 +192,7 @@ func CVbufferChecker (out:String)->(NSImage)
                 source as CGImageSource, 0, kCGImageAuxiliaryDataTypeDisparity
             )
         as? [AnyHashable : Any] else {
+            print("File Format Error")
             return ((0, 0), -1, nil)
         }
 
@@ -167,6 +200,7 @@ func CVbufferChecker (out:String)->(NSImage)
         do {
             depthData = try AVDepthData(fromDictionaryRepresentation: auxDataInfo)
         } catch {
+            print("File Format Error")
             return ((0, 0), -1, nil)
         }
         if depthData.depthDataType != kCVPixelFormatType_DisparityFloat32 {
@@ -191,36 +225,65 @@ func CVbufferChecker (out:String)->(NSImage)
         print(height)
 
         let documentsUrl = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0] as NSURL
-        let fileUrl = documentsUrl.appendingPathComponent("\(out).txt")
-
+        let fileUrl = documentsUrl
         var res = ""
+        var res_2 = ""
+        var res_3 = ""
 
-        for x in 0...width/3
+        for x in 0...width-1
         {
-            for y in 0...height/3
+            for y in 0...height/2-1
             {
-                let sampleX = 3*x
-                let sampleY = 3*y
-                let point = CGPoint(x:sampleX,y:sampleY)
-                let distanceAtXYPoint = depthPointer[Int(point.y * CGFloat(width) + point.x)]
-                res = res + String(sampleX) + " " + String(sampleY) + " " + String(distanceAtXYPoint) + "\n"
+                let sampleX_0 = x
+
+                let sampleY_0 = y
+
+                let point0 = CGPoint(x:sampleX_0,y:sampleY_0)
+
+                let distanceAtXYPoint_0 = depthPointer[Int(point0.y * CGFloat(width) + point0.x)]
+
+                res = res + String(distanceAtXYPoint_0) + ","
             }
+
+            for y in height/2-1...height-2
+            {
+                let sampleX_0 = x
+
+                let sampleY_0 = y
+
+                let point0 = CGPoint(x:sampleX_0,y:sampleY_0)
+
+                let distanceAtXYPoint_0 = depthPointer[Int(point0.y * CGFloat(width) + point0.x)]
+
+                res_2 = res_2 + String(distanceAtXYPoint_0) + ","
+            }
+            res_3 = res_3+res+res_2
+            res = ""
+            res_2 = ""
+            res_3 = res_3+"\n"
+            print(x)
         }
 
-        try! res.write(to: fileUrl!, atomically: true, encoding: String.Encoding.utf8)
+        try! res_3.write(to: fileUrl.appendingPathComponent("\(out).csv")!, atomically: true, encoding: String.Encoding.utf8)
 
         return ((x, y),
                 0, depthData.depthDataMap
         )
     }
 
-    let GPSource = CIImage(
-        cvPixelBuffer: CVbufferMaker(ext: ext, fileName: fileName, x: 100,y: 0).2!
-    )
-
-    let EPSource = GPSource.nsImage
-
-    return EPSource
+    let core = CVbufferMaker(ext: ext, fileName: fileName, x: 100,y: 0)
+    if core.1 != -1
+    {
+        let GPSource = CIImage(
+            cvPixelBuffer: core.2!
+        )
+        let XPSource = CVModifier(for: GPSource, focus_on: 0 , Scale: 4)
+        let EPSource = XPSource.nsImage
+        return EPSource
+    } else {
+        print("Program Exit")
+        exit(1)
+    }
 }
 
-fprintf(EPSource:CVbufferChecker(out:out), out:out);
+fprintf(EPSource:CVBufferChecker(out:out), out:out);
